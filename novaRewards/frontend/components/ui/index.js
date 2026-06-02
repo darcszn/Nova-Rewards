@@ -8,3 +8,11 @@ export { default as CopyButton } from './CopyButton';
 export { default as AnimatedCounter } from './AnimatedCounter';
 export { SkeletonText, SkeletonCard, SkeletonTable } from './Skeleton';
 export { Dropdown, DropdownItem, DropdownDivider } from './Dropdown';
+
+// Form field component library (#890)
+export { default as TextInput } from './TextInput';
+export { default as Textarea } from './Textarea';
+export { default as FormSelect } from './FormSelect';
+export { default as Checkbox } from './Checkbox';
+export { default as RadioGroup } from './RadioGroup';
+export { default as DatePicker } from './DatePicker';
