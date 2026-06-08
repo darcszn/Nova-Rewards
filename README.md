@@ -26,7 +26,7 @@ Nova Rewards replaces fragmented, opaque loyalty programs with on-chain token is
 - **Contributors** looking for a starting point
 
 
-website https://id-preview--d02fd795-96e4-4554-b32f-6598e022cc07.lovable.app/
+website  https://nova-rewards-app.lovable.app i
 ---
 
 ## Architecture
