@@ -29,7 +29,12 @@ const {
   versionsHandler,
 } = require('./middleware/apiVersioning');
 
+// Import health check module
+const healthCheck = require('./health/healthCheck');
+const { getPoolStatus } = require('./db');
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 // Configure CORS based on environment
 const corsOptions =
@@ -77,6 +82,35 @@ app.use("/api/v1/auth/forgot-password", authLimiter);
 // Health / readiness checks — /health, /health/detailed, /ready
 app.use('/health', require('./routes/health'));
 app.get('/ready', require('./routes/health').readyHandler);
+
+// Custom enhanced health check endpoint (overrides the basic one)
+app.get('/health/detailed', async (req, res) => {
+  try {
+    const health = await healthCheck.runAllChecks();
+    const statusCode = health.status === 'ok' ? 200 : 503;
+    res.status(statusCode).json(health);
+  } catch (error) {
+    console.error('[Health] Error running checks:', error);
+    res.status(503).json({
+      status: 'degraded',
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// Pool status endpoint (for monitoring)
+app.get('/pool-status', (req, res) => {
+  try {
+    const status = getPoolStatus();
+    res.json({
+      ...status,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get pool status' });
+  }
+});
 
 // Prometheus metrics scrape endpoint
 app.get("/metrics", async (req, res) => {
@@ -163,8 +197,6 @@ app.use(notFoundHandler);
 // Global error handler (must be last)
 app.use(globalErrorHandler);
 
-const PORT = process.env.PORT || 3001;
-
 // Only start the server when this file is run directly (not when required by tests)
 if (require.main === module) {
   app.listen(PORT, async () => {
@@ -179,6 +211,9 @@ if (require.main === module) {
     // Initialize Reward Issuance Worker
     require("./jobs/rewardIssuanceWorker");
     logger.info(`NovaRewards backend running on port ${PORT}`);
+    console.log(`✅ Health check: http://localhost:${PORT}/health`);
+    console.log(`✅ Detailed health: http://localhost:${PORT}/health/detailed`);
+    console.log(`✅ Pool status: http://localhost:${PORT}/pool-status`);
   });
 }
 
