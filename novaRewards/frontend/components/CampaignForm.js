@@ -1,165 +1,359 @@
 'use client';
+
 import { useState } from 'react';
+import MultiStepForm from './MultiStepForm';
 import api from '../lib/api';
 
-/**
- * Form for creating a new reward campaign.
- * Client-side validation mirrors backend validateCampaign rules.
- * Requirements: 7.2, 7.3, 10.3
- */
+// ---------------------------------------------------------------------------
+// Step definitions
+// ---------------------------------------------------------------------------
 
-function getFieldErrors(values) {
-  const errors = {};
+const STEPS = [
+  // Step 1 — Basic Info
+  {
+    title: 'Basic Info',
+    validate(data) {
+      const errors = {};
+      if (!data.name?.trim()) errors.name = 'Campaign name is required.';
+      if (!data.description?.trim()) errors.description = 'Description is required.';
+      return errors;
+    },
+    fields(data, update, errors) {
+      return (
+        <>
+          <label className="label">Campaign Name</label>
+          <input
+            className="input"
+            value={data.name ?? ''}
+            onChange={(e) => update('name', e.target.value)}
+            placeholder="Summer Rewards 2026"
+            aria-describedby={errors.name ? 'name-err' : undefined}
+          />
+          {errors.name && <p id="name-err" className="error">{errors.name}</p>}
 
-  if (!values.name.trim()) {
-    errors.name = 'Campaign name is required.';
-  }
+          <label className="label" style={{ marginTop: '1rem' }}>Description</label>
+          <textarea
+            className="input"
+            rows={3}
+            value={data.description ?? ''}
+            onChange={(e) => update('description', e.target.value)}
+            placeholder="Earn NOVA tokens on every purchase."
+            aria-describedby={errors.description ? 'desc-err' : undefined}
+          />
+          {errors.description && <p id="desc-err" className="error">{errors.description}</p>}
+        </>
+      );
+    },
+  },
 
-  const rate = Number(values.rewardRate);
-  if (!values.rewardRate) {
-    errors.rewardRate = 'Reward rate is required.';
-  } else if (isNaN(rate) || rate <= 0) {
-    errors.rewardRate = 'Reward rate must be a positive number.';
-  }
+  // Step 2 — Token Config
+  {
+    title: 'Token Config',
+    validate(data) {
+      const errors = {};
+      if (!data.tokenSymbol?.trim()) errors.tokenSymbol = 'Token symbol is required.';
+      if (!data.rewardRate || isNaN(Number(data.rewardRate)) || Number(data.rewardRate) <= 0)
+        errors.rewardRate = 'Reward rate must be a positive number.';
+      return errors;
+    },
+    fields(data, update, errors) {
+      return (
+        <>
+          <label className="label">Token Symbol</label>
+          <input
+            className="input"
+            value={data.tokenSymbol ?? 'NOVA'}
+            onChange={(e) => update('tokenSymbol', e.target.value.toUpperCase())}
+            placeholder="NOVA"
+            maxLength={12}
+            aria-describedby={errors.tokenSymbol ? 'sym-err' : undefined}
+          />
+          {errors.tokenSymbol && <p id="sym-err" className="error">{errors.tokenSymbol}</p>}
 
-  if (!values.startDate) {
-    errors.startDate = 'Start date is required.';
-  }
+          <label className="label" style={{ marginTop: '1rem' }}>Reward Rate (tokens per unit of spend)</label>
+          <input
+            className="input"
+            type="number"
+            min="0.0000001"
+            step="any"
+            value={data.rewardRate ?? ''}
+            onChange={(e) => update('rewardRate', e.target.value)}
+            placeholder="1.5"
+            aria-describedby={errors.rewardRate ? 'rate-err' : undefined}
+          />
+          {errors.rewardRate && <p id="rate-err" className="error">{errors.rewardRate}</p>}
+        </>
+      );
+    },
+  },
 
-  if (!values.endDate) {
-    errors.endDate = 'End date is required.';
-  } else if (values.startDate && new Date(values.endDate) <= new Date(values.startDate)) {
-    errors.endDate = 'End date must be after start date.';
-  }
+  // Step 3 — Rules
+  {
+    title: 'Rules',
+    validate(data) {
+      const errors = {};
+      if (data.minSpend && (isNaN(Number(data.minSpend)) || Number(data.minSpend) < 0))
+        errors.minSpend = 'Minimum spend must be a non-negative number.';
+      if (data.maxRewardPerUser && (isNaN(Number(data.maxRewardPerUser)) || Number(data.maxRewardPerUser) <= 0))
+        errors.maxRewardPerUser = 'Max reward per user must be a positive number.';
+      return errors;
+    },
+    fields(data, update, errors) {
+      return (
+        <>
+          <label className="label">Minimum Spend to Qualify (optional)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="any"
+            value={data.minSpend ?? ''}
+            onChange={(e) => update('minSpend', e.target.value)}
+            placeholder="0"
+            aria-describedby={errors.minSpend ? 'min-err' : undefined}
+          />
+          {errors.minSpend && <p id="min-err" className="error">{errors.minSpend}</p>}
 
-  return errors;
+          <label className="label" style={{ marginTop: '1rem' }}>Max Reward Per User (optional)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="any"
+            value={data.maxRewardPerUser ?? ''}
+            onChange={(e) => update('maxRewardPerUser', e.target.value)}
+            placeholder="Unlimited"
+            aria-describedby={errors.maxRewardPerUser ? 'max-err' : undefined}
+          />
+          {errors.maxRewardPerUser && <p id="max-err" className="error">{errors.maxRewardPerUser}</p>}
+
+          <label className="label" style={{ marginTop: '1rem' }}>Eligible Actions</label>
+          <select
+            className="input"
+            value={data.eligibleAction ?? 'purchase'}
+            onChange={(e) => update('eligibleAction', e.target.value)}
+          >
+            <option value="purchase">Purchase</option>
+            <option value="referral">Referral</option>
+            <option value="signup">Sign-up</option>
+            <option value="review">Review</option>
+          </select>
+        </>
+      );
+    },
+  },
+
+  // Step 4 — Budget
+  {
+    title: 'Budget',
+    validate(data) {
+      const errors = {};
+      if (!data.totalBudget || isNaN(Number(data.totalBudget)) || Number(data.totalBudget) <= 0)
+        errors.totalBudget = 'Total budget must be a positive number.';
+      if (!data.startDate) errors.startDate = 'Start date is required.';
+      if (!data.endDate) errors.endDate = 'End date is required.';
+      if (data.startDate && data.endDate && new Date(data.endDate) <= new Date(data.startDate))
+        errors.endDate = 'End date must be after start date.';
+      return errors;
+    },
+    fields(data, update, errors) {
+      return (
+        <>
+          <label className="label">Total Budget (NOVA tokens)</label>
+          <input
+            className="input"
+            type="number"
+            min="1"
+            step="any"
+            value={data.totalBudget ?? ''}
+            onChange={(e) => update('totalBudget', e.target.value)}
+            placeholder="10000"
+            aria-describedby={errors.totalBudget ? 'budget-err' : undefined}
+          />
+          {errors.totalBudget && <p id="budget-err" className="error">{errors.totalBudget}</p>}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+            <div>
+              <label className="label">Start Date</label>
+              <input
+                className="input"
+                type="date"
+                value={data.startDate ?? ''}
+                onChange={(e) => update('startDate', e.target.value)}
+                aria-describedby={errors.startDate ? 'start-err' : undefined}
+              />
+              {errors.startDate && <p id="start-err" className="error">{errors.startDate}</p>}
+            </div>
+            <div>
+              <label className="label">End Date</label>
+              <input
+                className="input"
+                type="date"
+                value={data.endDate ?? ''}
+                onChange={(e) => update('endDate', e.target.value)}
+                aria-describedby={errors.endDate ? 'end-err' : undefined}
+              />
+              {errors.endDate && <p id="end-err" className="error">{errors.endDate}</p>}
+            </div>
+          </div>
+        </>
+      );
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Review summary
+// ---------------------------------------------------------------------------
+
+function renderSummary(data) {
+  const rows = [
+    ['Campaign Name', data.name],
+    ['Description', data.description],
+    ['Token Symbol', data.tokenSymbol || 'NOVA'],
+    ['Reward Rate', `${data.rewardRate} tokens / unit`],
+    ['Eligible Action', data.eligibleAction || 'purchase'],
+    ['Min Spend', data.minSpend ? `${data.minSpend}` : 'None'],
+    ['Max Reward / User', data.maxRewardPerUser ? `${data.maxRewardPerUser}` : 'Unlimited'],
+    ['Total Budget', `${data.totalBudget} NOVA`],
+    ['Start Date', data.startDate],
+    ['End Date', data.endDate],
+  ];
+  return (
+    <dl className="msf-summary-list">
+      {rows.map(([label, value]) => (
+        <div key={label} className="msf-summary-row">
+          <dt>{label}</dt>
+          <dd>{value || '—'}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
-export default function CampaignForm({ merchantId, apiKey, onSuccess }) {
-  const [form, setForm] = useState({
-    name: '',
-    rewardRate: '',
-    startDate: '',
-    endDate: '',
-  });
-  const [touched, setTouched] = useState({
-    name: false,
-    rewardRate: false,
-    startDate: false,
-    endDate: false,
-  });
-  const [status, setStatus] = useState('idle');
-  const [serverMessage, setServerMessage] = useState('');
+// ---------------------------------------------------------------------------
+// Transaction confirmation modal
+// ---------------------------------------------------------------------------
 
-  const fieldErrors = getFieldErrors(form);
-  const isFormValid = Object.keys(fieldErrors).length === 0;
+function TxConfirmModal({ data, onConfirm, onCancel, submitting }) {
+  const estimatedFee = '0.00001 XLM'; // Soroban base fee estimate
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tx-modal-title"
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+      }}
+    >
+      <div className="card" style={{ maxWidth: 420, width: '90%' }}>
+        <h3 id="tx-modal-title" style={{ fontWeight: 700, marginBottom: '0.75rem' }}>
+          Confirm On-Chain Transaction
+        </h3>
+        <p style={{ color: 'var(--muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          This will register <strong>{data.name}</strong> on the Stellar network.
+        </p>
+        <dl className="msf-summary-list" style={{ marginBottom: '1rem' }}>
+          <div className="msf-summary-row"><dt>Estimated Fee</dt><dd>{estimatedFee}</dd></div>
+          <div className="msf-summary-row"><dt>Network</dt><dd>{process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET'}</dd></div>
+        </dl>
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary" onClick={onCancel} disabled={submitting}>Cancel</button>
+          <button className="btn btn-primary" onClick={onConfirm} disabled={submitting}>
+            {submitting ? 'Signing…' : 'Sign & Submit'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
-  const touch = (field) => () => setTouched((t) => ({ ...t, [field]: true }));
+// ---------------------------------------------------------------------------
+// CampaignForm — main export
+// ---------------------------------------------------------------------------
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setTouched({ name: true, rewardRate: true, startDate: true, endDate: true });
-    if (!isFormValid) return;
+const INITIAL_DATA = {
+  name: '', description: '', tokenSymbol: 'NOVA', rewardRate: '',
+  eligibleAction: 'purchase', minSpend: '', maxRewardPerUser: '',
+  totalBudget: '', startDate: '', endDate: '',
+};
 
-    setStatus('loading');
-    setServerMessage('');
+export default function CampaignForm({ merchantId, apiKey, onSuccess, editData }) {
+  const [pendingData, setPendingData] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Called by MultiStepForm when user clicks "Submit" on the review screen
+  async function handleReviewSubmit(data) {
+    setPendingData(data); // show confirmation modal
+  }
+
+  async function handleConfirm() {
+    setSubmitting(true);
     try {
-      await api.post(
-        '/api/campaigns',
-        { merchantId, name: form.name.trim(), rewardRate: form.rewardRate, startDate: form.startDate, endDate: form.endDate },
-        { headers: { 'x-api-key': apiKey } }
-      );
-      setStatus('done');
-      setServerMessage('Campaign created successfully.');
-      setForm({ name: '', rewardRate: '', startDate: '', endDate: '' });
-      setTouched({ name: false, rewardRate: false, startDate: false, endDate: false });
+      const payload = {
+        merchantId,
+        name: pendingData.name.trim(),
+        description: pendingData.description.trim(),
+        tokenSymbol: pendingData.tokenSymbol || 'NOVA',
+        rewardRate: pendingData.rewardRate,
+        eligibleAction: pendingData.eligibleAction,
+        minSpend: pendingData.minSpend || null,
+        maxRewardPerUser: pendingData.maxRewardPerUser || null,
+        totalBudget: pendingData.totalBudget,
+        startDate: pendingData.startDate,
+        endDate: pendingData.endDate,
+      };
+
+      if (editData?.id) {
+        await api.patch(`/api/campaigns/${editData.id}`, payload, { headers: { 'x-api-key': apiKey } });
+      } else {
+        await api.post('/api/campaigns', payload, { headers: { 'x-api-key': apiKey } });
+      }
+
+      setPendingData(null);
       onSuccess?.();
     } catch (err) {
-      setStatus('error');
-      setServerMessage(err.response?.data?.message || err.message);
+      throw err; // bubble up to MultiStepForm's submitError handler
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  const loading = status === 'loading';
+  const initialData = editData
+    ? {
+        name: editData.name || '',
+        description: editData.description || '',
+        tokenSymbol: editData.token_symbol || 'NOVA',
+        rewardRate: editData.reward_rate || '',
+        eligibleAction: editData.eligible_action || 'purchase',
+        minSpend: editData.min_spend || '',
+        maxRewardPerUser: editData.max_reward_per_user || '',
+        totalBudget: editData.total_budget || '',
+        startDate: editData.start_date?.slice(0, 10) || '',
+        endDate: editData.end_date?.slice(0, 10) || '',
+      }
+    : INITIAL_DATA;
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
-      <label className="label" htmlFor="campaign-name">Campaign Name</label>
-      <input
-        id="campaign-name"
-        className="input"
-        value={form.name}
-        onChange={set('name')}
-        onBlur={touch('name')}
-        placeholder="Summer Rewards"
-        disabled={loading}
-        aria-describedby={touched.name && fieldErrors.name ? 'name-error' : undefined}
-        aria-invalid={touched.name && !!fieldErrors.name}
+    <>
+      <MultiStepForm
+        steps={STEPS}
+        initialData={initialData}
+        storageKey={`campaign-form-${merchantId}`}
+        onSubmit={handleReviewSubmit}
+        renderSummary={renderSummary}
+        urlParamKey="step"
       />
-      {touched.name && fieldErrors.name && (
-        <span id="name-error" className="error" role="alert">{fieldErrors.name}</span>
-      )}
 
-      <label className="label" htmlFor="campaign-reward-rate">Reward Rate (NOVA per unit of spend)</label>
-      <input
-        id="campaign-reward-rate"
-        className="input"
-        type="number"
-        min="0.0000001"
-        step="any"
-        value={form.rewardRate}
-        onChange={set('rewardRate')}
-        onBlur={touch('rewardRate')}
-        placeholder="1.5"
-        disabled={loading}
-        aria-describedby={touched.rewardRate && fieldErrors.rewardRate ? 'rewardRate-error' : undefined}
-        aria-invalid={touched.rewardRate && !!fieldErrors.rewardRate}
-      />
-      {touched.rewardRate && fieldErrors.rewardRate && (
-        <span id="rewardRate-error" className="error" role="alert">{fieldErrors.rewardRate}</span>
+      {pendingData && (
+        <TxConfirmModal
+          data={pendingData}
+          submitting={submitting}
+          onConfirm={handleConfirm}
+          onCancel={() => setPendingData(null)}
+        />
       )}
-
-      <label className="label" htmlFor="campaign-start-date">Start Date</label>
-      <input
-        id="campaign-start-date"
-        className="input"
-        type="date"
-        value={form.startDate}
-        onChange={set('startDate')}
-        onBlur={touch('startDate')}
-        disabled={loading}
-        aria-describedby={touched.startDate && fieldErrors.startDate ? 'startDate-error' : undefined}
-        aria-invalid={touched.startDate && !!fieldErrors.startDate}
-      />
-      {touched.startDate && fieldErrors.startDate && (
-        <span id="startDate-error" className="error" role="alert">{fieldErrors.startDate}</span>
-      )}
-
-      <label className="label" htmlFor="campaign-end-date">End Date</label>
-      <input
-        id="campaign-end-date"
-        className="input"
-        type="date"
-        value={form.endDate}
-        onChange={set('endDate')}
-        onBlur={touch('endDate')}
-        disabled={loading}
-        aria-describedby={touched.endDate && fieldErrors.endDate ? 'endDate-error' : undefined}
-        aria-invalid={touched.endDate && !!fieldErrors.endDate}
-      />
-      {touched.endDate && fieldErrors.endDate && (
-        <span id="endDate-error" className="error" role="alert">{fieldErrors.endDate}</span>
-      )}
-
-      <button className="btn btn-primary" type="submit" disabled={!isFormValid || loading}>
-        {loading ? 'Creating…' : 'Create Campaign'}
-      </button>
-      {serverMessage && (
-        <p className={status === 'error' ? 'error' : 'success'} role="status">
-          {serverMessage}
-        </p>
-      )}
-    </form>
+    </>
   );
 }
